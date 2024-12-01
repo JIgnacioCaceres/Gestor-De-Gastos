@@ -5,11 +5,11 @@ import requests
 
 
 class Usuario:
-    def __init__(self, usuario_id, nombre_usuario, contrasena):
+    def __init__(self, usuario_id, nombre_usuario, contrasena, divisa="ARS"):
         self.usuario_id = usuario_id
         self.nombre_usuario = nombre_usuario
         self.contrasena = contrasena
-        self.divisa = "ARS"
+        self.divisa = divisa
 
 
 class Aplicacion:
@@ -142,27 +142,154 @@ class Aplicacion:
         tk.Label(frame, text=f"Bienvenido, {self.usuario_actual.nombre_usuario}", font=("Arial", 16)).grid(row=0, column=0, columnspan=2, pady=10)
         tk.Button(frame, text="Agregar Gasto", width=20, command=self.agregar_gasto).grid(row=1, column=0, pady=5)
         tk.Button(frame, text="Ver Gastos", width=20, command=self.ver_gastos).grid(row=1, column=1, pady=5)
-        tk.Button(frame, text="Elegir Divisa", width=20, command=self.elegir_divisa).grid(row=2, column=0, pady=5)
-        tk.Button(frame, text="Modificar Usuario", width=20, command=self.modificar_usuario).grid(row=2, column=1, pady=5)
-        tk.Button(frame, text="Cerrar Sesión", width=20, command=self.cerrar_sesion).grid(row=3, column=0, columnspan=2, pady=10)
+        tk.Button(frame, text="Estadísticas", width=20, command=self.ver_estadisticas).grid(row=2, column=0, pady=5)
+        tk.Button(frame, text="Elegir Divisa", width=20, command=self.elegir_divisa).grid(row=2, column=1, pady=5)
+        tk.Button(frame, text="Modificar Usuario", width=20, command=self.modificar_usuario).grid(row=3, column=0, pady=5)
+        tk.Button(frame, text="Cerrar Sesión", width=20, command=self.cerrar_sesion).grid(row=3, column=1, pady=5)
 
     def agregar_gasto(self):
-        pass  # Implementar
+        monto = simpledialog.askfloat("Agregar Gasto", "Ingrese el monto del gasto:")
+        descripcion = simpledialog.askstring("Agregar Gasto", "Ingrese una descripción del gasto:")
+        if not monto or not descripcion:
+            messagebox.showerror("Error", "Debe completar todos los campos.")
+            return
+        try:
+            conexion = conexion_sql.conectar()
+            cursor = conexion.cursor()
+            cursor.execute(
+                "INSERT INTO GastosXUsuario (UsuarioID, Monto, Descripcion) VALUES (?, ?, ?)",
+                (self.usuario_actual.usuario_id, monto, descripcion)
+            )
+            conexion.commit()
+            messagebox.showinfo("Éxito", "Gasto agregado correctamente.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo agregar el gasto: {e}")
+        finally:
+            if conexion:
+                conexion.close()
 
     def ver_gastos(self):
-        pass  # Implementar
+        try:
+            conexion = conexion_sql.conectar()
+            cursor = conexion.cursor()
+            cursor.execute("SELECT Monto, Descripcion FROM GastosXUsuario WHERE UsuarioID = ?", (self.usuario_actual.usuario_id,))
+            gastos = cursor.fetchall()
+            if gastos:
+                listado = "\n".join([f"${monto:.2f} - {descripcion}" for monto, descripcion in gastos])
+                messagebox.showinfo("Gastos", listado)
+            else:
+                messagebox.showinfo("Gastos", "No se encontraron gastos registrados.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo recuperar los gastos: {e}")
+        finally:
+            if conexion:
+                conexion.close()
 
-    def elegir_divisa(self):
-        pass  # Implementar
+    def ver_estadisticas(self):
+        try:
+            conexion = conexion_sql.conectar()
+            cursor = conexion.cursor()
+            cursor.execute("""
+                SELECT SUM(Monto), AVG(Monto), COUNT(*) 
+                FROM GastosXUsuario
+                WHERE UsuarioID = ?
+            """, (self.usuario_actual.usuario_id,))
+            resultado = cursor.fetchone()
+            if resultado:
+                total, promedio, cantidad = resultado
+                estadisticas = f"Total de gastos: ${total:.2f}\nPromedio por gasto: ${promedio:.2f}\nCantidad de gastos: {cantidad}"
+                messagebox.showinfo("Estadísticas", estadisticas)
+            else:
+                messagebox.showinfo("Estadísticas", "No se encontraron gastos registrados.")
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo obtener las estadísticas: {e}")
+        finally:
+            if conexion:
+                conexion.close()
 
     def modificar_usuario(self):
-        pass  # Implementar
+        self.limpiar_interfaz()
+        frame = tk.Frame(self.root)
+        frame.pack(pady=20)
+
+        tk.Label(frame, text="Modificar Datos del Usuario", font=("Arial", 16)).grid(row=0, column=0, columnspan=2, pady=10)
+
+        tk.Label(frame, text="Nombre de Usuario:").grid(row=1, column=0, pady=5)
+        nombre_usuario = tk.Entry(frame)
+        nombre_usuario.grid(row=1, column=1)
+        nombre_usuario.insert(0, self.usuario_actual.nombre_usuario)
+
+        tk.Label(frame, text="Contraseña:").grid(row=2, column=0, pady=5)
+        contrasena = tk.Entry(frame, show="*")
+        contrasena.grid(row=2, column=1)
+
+        tk.Label(frame, text="Correo Electrónico:").grid(row=3, column=0, pady=5)
+        email = tk.Entry(frame)
+        email.grid(row=3, column=1)
+
+        def guardar_modificaciones():
+            if not nombre_usuario.get() or not contrasena.get() or not email.get():
+                messagebox.showerror("Error", "Todos los campos son obligatorios.")
+                return
+
+            try:
+                conexion = conexion_sql.conectar()
+                cursor = conexion.cursor()
+                cursor.execute("""
+                    UPDATE Usuarios 
+                    SET Nombre = ?, Email = ?
+                    WHERE UsuarioID = ?
+                """, (nombre_usuario.get(), email.get(), self.usuario_actual.usuario_id))
+                conexion.commit()
+                cursor.execute("""
+                    UPDATE Contrasenas
+                    SET Contrasena = ?
+                    WHERE UsuarioID = ?
+                """, (contrasena.get(), self.usuario_actual.usuario_id))
+                conexion.commit()
+
+                self.usuario_actual.nombre_usuario = nombre_usuario.get()
+                messagebox.showinfo("Éxito", "Datos de usuario modificados correctamente.")
+                self.mostrar_menu_principal()
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al modificar usuario: {e}")
+            finally:
+                if conexion:
+                    conexion.close()
+
+        tk.Button(frame, text="Guardar Cambios", command=guardar_modificaciones).grid(row=4, column=0, columnspan=2, pady=10)
+        tk.Button(frame, text="Volver", command=self.mostrar_menu_principal).grid(row=5, column=0, columnspan=2, pady=10)
+
+    def elegir_divisa(self):
+        self.limpiar_interfaz()
+        frame = tk.Frame(self.root)
+        frame.pack(pady=20)
+
+        tk.Label(frame, text="Seleccione su divisa", font=("Arial", 16)).grid(row=0, column=0, columnspan=2, pady=10)
+
+        divisas = ["ARS", "USD", "EUR", "BRL", "JPY"]
+        divisa_seleccionada = tk.StringVar(value=self.usuario_actual.divisa)
+
+        tk.Label(frame, text="Divisa:").grid(row=1, column=0, pady=5)
+        combo_divisas = ttk.Combobox(frame, textvariable=divisa_seleccionada, values=divisas, state="readonly")
+        combo_divisas.grid(row=1, column=1, pady=5)
+
+        def guardar_divisa():
+            self.usuario_actual.divisa = divisa_seleccionada.get()
+            messagebox.showinfo("Éxito", f"Divisa cambiada a {self.usuario_actual.divisa}.")
+            self.mostrar_menu_principal()
+
+        tk.Button(frame, text="Elegir Divisa", width=20, command=guardar_divisa).grid(row=2, column=0, columnspan=2, pady=5)
+        tk.Button(frame, text="Volver", width=20, command=self.mostrar_menu_principal).grid(row=3, column=0, columnspan=2, pady=5)
 
     def cerrar_sesion(self):
         self.usuario_actual = None
         self.crear_interfaz_inicio()
 
+    def iniciar(self):
+        self.root.mainloop()
+
 
 if __name__ == "__main__":
     app = Aplicacion()
-    app.root.mainloop()
+    app.iniciar()
